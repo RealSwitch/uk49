@@ -1,0 +1,29 @@
+# Example Terraform variables file
+# Copy this to terraform.tfvars and replace with your own values
+
+aws_region       = "us-east-1"
+project_name     = "uk49"
+environment      = "dev"
+db_name          = "uk49"
+db_username      = "uk49admin"
+db_password      = "CHANGE_ME_to_secure_password_123!"
+
+# Instance sizing
+db_instance_class    = "db.t3.micro"      # Use db.t3.small or larger for production
+allocated_storage    = 20                 # 20 GB
+max_allocated_storage = 100               # Auto-scale up to 100 GB
+
+engine_version       = "15.3"
+skip_final_snapshot  = true               # Set to false for production
+publicly_accessible  = false              # Keep false for security
+
+# Network access
+# Update this to your VPC/bastion/application security group CIDR
+allowed_cidr_blocks = ["10.0.0.0/8"]
+
+tags = {
+  Project     = "uk49"
+  Environment = "dev"
+  Terraform   = "true"
+  Owner       = "data-team"
+}

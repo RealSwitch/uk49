@@ -1,0 +1,40 @@
+services:
+  db:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: uk49
+      POSTGRES_PASSWORD: uk49pass
+      POSTGRES_DB: uk49
+    ports:
+      - "5432:5432"
+    volumes:
+      - db_data:/var/lib/postgresql/data
+
+  api:
+    image: python:3.11-slim
+    volumes:
+      - ./:/app
+    working_dir: /app
+    command: bash -lc "pip install -r requirements.txt && uvicorn api.main:app --host 0.0.0.0 --port 8000 --reload"
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=postgresql+psycopg2://uk49:uk49pass@db:5432/uk49
+    depends_on:
+      - db
+
+  streamlit:
+    image: python:3.11-slim
+    volumes:
+      - ./:/app
+    working_dir: /app
+    command: bash -lc "pip install -r requirements.txt && streamlit run app/streamlit_app.py --server.port 8501 --server.address 0.0.0.0"
+    ports:
+      - "8501:8501"
+    environment:
+      - API_URL=http://api:8000
+    depends_on:
+      - api
+
+volumes:
+  db_data:
