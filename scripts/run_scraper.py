@@ -16,6 +16,8 @@ This script:
 import sys
 import os
 import logging
+import importlib.util
+
 
 # Add parent directory to path for imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -32,7 +34,6 @@ def load_etl_from_path():
 
   This avoids importing the installed `airflow` package which can trigger
   heavy initialization (and version conflicts)."""
-  import importlib.util
   repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
   etl_path = os.path.join(repo_root, 'airflow', 'scripts', 'etl_tasks.py')
   if not os.path.exists(etl_path):

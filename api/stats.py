@@ -27,7 +27,7 @@ WITH exploded AS (
   FROM draws
 ),
 target AS (
-  SELECT :target_date::date AS draw_date
+  SELECT CAST(:target_date AS date) AS draw_date
 )
 SELECT
   gs.number,

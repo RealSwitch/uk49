@@ -1,67 +1,33 @@
 import logging
-import requests
 import pandas as pd
 from sqlalchemy import create_engine
 import os
-from bs4 import BeautifulSoup
-from datetime import datetime
+import importlib.util
 
 logger = logging.getLogger(__name__)
 
 
+def load_scraper():
+    """Load the star49s scraper from the local script."""
+    repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '../..'))
+    scraper_path = os.path.join(repo_root, 'airflow', 'scripts', 'scraper_star49s.py')
+    if not os.path.exists(scraper_path):
+        raise FileNotFoundError(f"scraper_star49s.py not found at {scraper_path}")
+    spec = importlib.util.spec_from_file_location('scraper_star49s', scraper_path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
 def fetch_draws():
-    """Scrape recent UK49 draw results from https://uk49s.net/.
-
-    This function uses heuristics to locate a results table on the
-    homepage. The exact selectors may need adjustment if the site
-    structure changes.
-    """
-    url = 'https://uk49s.net/'
-    logger.info('Fetching draws from %s', url)
+    """Scrape UK49 Drivetime results from star49s.com/results/drivetime/history."""
     try:
-        resp = requests.get(url, timeout=20)
-        resp.raise_for_status()
+        scraper_mod = load_scraper()
+        df = scraper_mod.scrape_star49s_history()
+        return df
     except Exception as e:
-        logger.exception('Error fetching %s: %s', url, e)
+        logger.exception(f'fetch_draws failed: {e}')
         return pd.DataFrame()
-
-    soup = BeautifulSoup(resp.text, 'lxml')
-
-    # Try to find a table that contains draw rows
-    table = (
-        soup.find('table', {'id': 'results'})
-        or soup.find('table', {'class': 'results'})
-        or soup.find('table')
-    )
-
-    rows = []
-    if table:
-        for tr in table.find_all('tr'):
-            cols = [td.get_text(separator=' ', strip=True) for td in tr.find_all('td')]
-            # Heuristic: date + 6 numbers (or more)
-            if len(cols) >= 7:
-                draw_date = cols[0]
-                numbers = cols[1:7]
-                # normalize date to ISO-ish if possible
-                rows.append({'draw_date': draw_date, 'numbers': ','.join(numbers)})
-    else:
-        logger.warning('No table found when scraping %s', url)
-
-    # As a safety: attempt to find any blocks that look like draws
-    if not rows:
-        # find any occurrence of 6 numbers in text nodes
-        text = soup.get_text(' ', strip=True)
-        import re
-
-        matches = re.findall(r'(\d{1,2}[,\s])+\d{1,2}', text)
-        for m in matches[:20]:
-            nums = re.findall(r'\d{1,2}', m)
-            if len(nums) >= 6:
-                rows.append({'draw_date': datetime.utcnow().date().isoformat(), 'numbers': ','.join(nums[:6])})
-
-    df = pd.DataFrame(rows)
-    logger.info('Scraped %d draw rows', len(df))
-    return df
 
 
 def transform(df: pd.DataFrame) -> pd.DataFrame:
