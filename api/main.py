@@ -33,7 +33,7 @@ def health():
 @app.get('/draws')
 def list_draws(limit: int = 50, db: Session = Depends(get_db)):
     rows = db.query(Draw).order_by(Draw.id.desc()).limit(limit).all()
-    return [{'id': r.id, 'draw_date': r.draw_date, 'numbers': r.numbers} for r in rows]
+    return [{'id': r.id, 'draw_date': r.draw_date, 'draw_type': r.draw_type, 'numbers': r.numbers} for r in rows]
 
 
 @app.get('/stats/rolling_frequency')
@@ -93,12 +93,14 @@ def seed_draws(num_days: int = 60, db: Session = Depends(get_db)):
     
     for i in range(num_days, 0, -1):
         draw_date = (today - timedelta(days=i)).isoformat()
-        # Generate 6 random numbers from 1-49
-        numbers = sorted(random.sample(range(1, 50), 6))
-        numbers_str = ','.join(map(str, numbers))
-        
-        draw = Draw(draw_date=draw_date, numbers=numbers_str)
-        draws_to_insert.append(draw)
+        # Generate both lunchtime and teatime draws for each day
+        for draw_type in ['lunchtime', 'teatime']:
+            # Generate 6 random numbers from 1-49
+            numbers = sorted(random.sample(range(1, 50), 6))
+            numbers_str = ','.join(map(str, numbers))
+            
+            draw = Draw(draw_date=draw_date, draw_type=draw_type, numbers=numbers_str)
+            draws_to_insert.append(draw)
     
     db.add_all(draws_to_insert)
     db.commit()

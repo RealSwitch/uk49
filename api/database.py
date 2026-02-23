@@ -1,5 +1,5 @@
 import os
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 
 DATABASE_URL = os.environ.get('DATABASE_URL', 'sqlite:///uk49.db')
@@ -24,7 +24,10 @@ def test_connection(timeout_seconds: int = 5) -> bool:
 	"""
 	try:
 		with engine.connect() as conn:
-			conn.execution_options(timeout=timeout_seconds).execute("SELECT 1")
+			# Execute a simple query using SQLAlchemy text(); avoid
+			# unsupported execution_options like `timeout` which can
+			# raise on some dialects (e.g. sqlite).
+			conn.execute(text("SELECT 1"))
 		return True
 	except Exception:
 		return False

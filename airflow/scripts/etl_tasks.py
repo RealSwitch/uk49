@@ -68,7 +68,11 @@ def load_to_db(df: pd.DataFrame):
 
     logger.info('Loading %d rows to DB', len(df))
     # write only selected columns
-    to_save = df[['draw_date', 'numbers']].copy()
+    if 'draw_type' in df.columns:
+        to_save = df[['draw_date', 'draw_type', 'numbers']].copy()
+    else:
+        to_save = df[['draw_date', 'numbers']].copy()
+        to_save['draw_type'] = 'drivetime'
     # ensure table exists or let pandas create it
     try:
         to_save.to_sql('draws', engine, if_exists='append', index=False)

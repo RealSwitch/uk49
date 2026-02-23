@@ -1,110 +1,150 @@
 """
-Scraper for UK49 Drivetime results from star49s.com/results/drivetime/history
+Scraper for UK49 results from star49s.com
 
 This scraper:
-1. Fetches the history page with a user-agent
-2. Parses the HTML table for draw dates and numbers
-3. Returns a DataFrame with columns: draw_date, numbers
+1. Fetches both lunchtime and teatime draw history pages using Playwright (JavaScript rendering)
+2. Extracts draw dates and winning numbers from the rendered page
+3. Returns a DataFrame with columns: draw_date, draw_type, numbers (comma-separated)
+
+Note: Uses Playwright for headless browser automation since star49s.com uses Next.js with client-side rendering.
 """
 
 import logging
-import requests
 import pandas as pd
-from bs4 import BeautifulSoup
 from datetime import datetime
 import re
+from typing import List, Dict
 
 logger = logging.getLogger(__name__)
 
-# User-Agent to avoid bot blocking
-USER_AGENT = (
-    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
-    '(KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-)
+LUNCHTIME_URL = 'https://star49s.com/results/lunchtime/history'
+TEATIME_URL = 'https://star49s.com/results/teatime/history'
 
-HISTORY_URL = 'https://star49s.com/results/drivetime/history'
+
+def scrape_url_with_playwright(url: str, draw_type: str) -> pd.DataFrame:
+    """Scrape UK49 results using Playwright (handles JavaScript rendering).
+
+    Args:
+        url: The history page URL (lunchtime or teatime)
+        draw_type: 'lunchtime' or 'teatime'
+
+    Returns a DataFrame with columns: draw_date, draw_type, numbers (comma-separated).
+    """
+    try:
+        from playwright.sync_api import sync_playwright
+    except ImportError:
+        logger.error('Playwright not installed. Install with: pip install playwright')
+        logger.error('Then run: playwright install chromium')
+        return pd.DataFrame()
+
+    logger.info(f'Fetching {url} with Playwright (draw_type={draw_type})')
+
+    rows = []
+
+    try:
+        with sync_playwright() as p:
+            # Use chromium browser for better performance
+            browser = p.chromium.launch(headless=True)
+            page = browser.new_page(viewport={'width': 1280, 'height': 720})
+            
+            # Set timeout and navigate
+            page.set_default_timeout(30000)
+            logger.info(f'Navigating to {url}...')
+            page.goto(url, wait_until='networkidle')
+            
+            # Wait for results to load (look for result rows)
+            logger.info('Waiting for results to load...')
+            try:
+                page.wait_for_selector('[data-testid="result"], .result, tr[data-result]', timeout=10000)
+            except:
+                logger.warning('Timeout waiting for result elements, continuing anyway')
+            
+            # Extract all visible text content
+            content = page.content()
+            
+            # Try multiple selectors for rows
+            result_rows = []
+            for selector in [
+                '[data-testid="result"]',
+                '.result',
+                'tr[data-result]',
+                '[class*="result"]',
+                'div[class*="DrawRow"]',
+                'article',
+            ]:
+                try:
+                    elements = page.query_selector_all(selector)
+                    if elements:
+                        logger.info(f'Found {len(elements)} elements with selector: {selector}')
+                        result_rows = elements
+                        break
+                except:
+                    pass
+            
+            # Extract text from each row
+            for row in result_rows:
+                try:
+                    text = row.text_content()
+                    # Look for date and number patterns
+                    # Pattern: DD/MM or similar date format followed by 6 numbers
+                    matches = re.findall(r'(\d{1,2}[-/]\d{1,2}(?:[-/]\d{2,4})?)[^\d]*(\d{1,2})[^\d]*(\d{1,2})[^\d]*(\d{1,2})[^\d]*(\d{1,2})[^\d]*(\d{1,2})[^\d]*(\d{1,2})?', text)
+                    
+                    for match in matches:
+                        date_str = match[0]
+                        numbers = [int(n) for n in match[1:7] if n]
+                        
+                        # Validate: 6 unique numbers between 1-49
+                        if len(numbers) >= 6 and 1 <= min(numbers) and max(numbers) <= 49:
+                            numbers = sorted(set(numbers))[:6]
+                            if len(numbers) == 6:
+                                rows.append({
+                                    'draw_date': date_str,
+                                    'draw_type': draw_type,
+                                    'numbers': ','.join(map(str, numbers))
+                                })
+                
+                except Exception as e:
+                    logger.debug(f'Error extracting row: {e}')
+            
+            browser.close()
+            
+    except Exception as e:
+        logger.exception(f'Error scraping {url}: {e}')
+        return pd.DataFrame()
+
+    df = pd.DataFrame(rows)
+    logger.info(f'Scraped {len(df)} draws from {draw_type}')
+    return df
 
 
 def scrape_star49s_history():
-    """Scrape UK49 Drivetime draw results from star49s.com history page.
+    """Scrape UK49 lunchtime and teatime results from star49s.com.
 
-    Returns a DataFrame with columns: draw_date, numbers (comma-separated).
+    Returns a DataFrame with columns: draw_date, draw_type, numbers (comma-separated).
     """
-    logger.info(f'Fetching {HISTORY_URL}')
-
-    headers = {'User-Agent': USER_AGENT}
-
-    try:
-        resp = requests.get(HISTORY_URL, headers=headers, timeout=20)
-        resp.raise_for_status()
-    except Exception as e:
-        logger.exception(f'Error fetching {HISTORY_URL}: {e}')
-        return pd.DataFrame()
-
-    soup = BeautifulSoup(resp.text, 'lxml')
-
-    # Look for a table containing results
-    rows = []
+    # Fetch both lunchtime and teatime draws
+    lunchtime_df = scrape_url_with_playwright(LUNCHTIME_URL, 'lunchtime')
+    teatime_df = scrape_url_with_playwright(TEATIME_URL, 'teatime')
     
-    # Try to find result tables (multiple tables possible)
-    tables = soup.find_all('table')
-    logger.info(f'Found {len(tables)} table(s)')
-
-    for table in tables:
-        for tr in table.find_all('tr'):
-            cols = [td.get_text(separator=' ', strip=True) for td in tr.find_all(['td', 'th'])]
-            
-            if not cols or len(cols) < 2:
-                continue
-
-            # Skip header rows
-            if any(h in cols[0].lower() for h in ['date', 'draw', 'time']):
-                continue
-
-            # Heuristic: first column is date-like, rest are numbers
-            date_str = cols[0]
-            # Check if it starts with a date pattern (DD/MM, DD-MM, or similar)
-            if not re.match(r'\d{1,2}[-/]\d{1,2}', date_str):
-                continue
-
-            # Remaining cols should contain numbers
-            num_str = ' '.join(cols[1:])
-            # Extract all 1-2 digit numbers
-            nums = re.findall(r'\d{1,2}', num_str)
-            
-            # UK49 draws 6 numbers; filter by that
-            if len(nums) >= 6:
-                # Take first 6 unique numbers
-                nums = sorted(set([int(n) for n in nums[:6]]))
-                if 1 <= min(nums) and max(nums) <= 49:
-                    rows.append({
-                        'draw_date': date_str,
-                        'numbers': ','.join(map(str, nums))
-                    })
-
-    if not rows:
-        logger.warning('No result rows found in tables')
-        # Try alternative: look for any div/span blocks with date + numbers pattern
-        text_blocks = soup.find_all(['div', 'span', 'p'])
-        for block in text_blocks:
-            text = block.get_text(' ', strip=True)
-            # Look for patterns like "15/02 12 34 45 02 33 22"
-            matches = re.findall(r'(\d{1,2}[-/]\d{1,2}).*?(\d{1,2}\s+\d{1,2}\s+\d{1,2}\s+\d{1,2}\s+\d{1,2}\s+\d{1,2})', text)
-            for date_str, nums_str in matches:
-                nums = [int(x) for x in re.findall(r'\d{1,2}', nums_str)]
-                if len(nums) >= 6 and 1 <= min(nums) and max(nums) <= 49:
-                    rows.append({
-                        'draw_date': date_str,
-                        'numbers': ','.join(map(str, sorted(nums[:6])))
-                    })
-
-    df = pd.DataFrame(rows)
-    logger.info(f'Scraped {len(df)} draws from star49s.com')
-    return df
+    # Combine results
+    if not lunchtime_df.empty and not teatime_df.empty:
+        combined_df = pd.concat([lunchtime_df, teatime_df], ignore_index=True)
+    elif not lunchtime_df.empty:
+        combined_df = lunchtime_df
+    elif not teatime_df.empty:
+        combined_df = teatime_df
+    else:
+        combined_df = pd.DataFrame()
+    
+    logger.info(f'Total: Scraped {len(combined_df)} draws from star49s.com (lunchtime + teatime)')
+    return combined_df
 
 
 if __name__ == '__main__':
     # Quick test
     logging.basicConfig(level=logging.INFO)
     df = scrape_star49s_history()
-    print(df.head())
+    print(df.head(10))
+    print(f'\nTotal draws: {len(df)}')
+    if not df.empty:
+        print(f'Draw types: {df["draw_type"].value_counts().to_dict()}')

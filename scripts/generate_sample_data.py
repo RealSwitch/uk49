@@ -55,28 +55,36 @@ def generate_sample_draws(num_days=90):
     """Generate sample UK49 draws for the past `num_days` days.
 
     Draws are realistic but randomly generated (not actual historical data).
+    Generates 2 draws per day: lunchtime and teatime.
     """
     draws = []
     today = datetime.now().date()
 
     for i in range(num_days, 0, -1):
         draw_date = (today - timedelta(days=i)).isoformat()
-        # Pick a base draw and randomly vary it slightly
-        base = random.choice(BASE_DRAWS)
-        base_nums = [int(x) for x in base.split(',')]
+        
+        # Generate both lunchtime and teatime draws for each day
+        for draw_type in ['lunchtime', 'teatime']:
+            # Pick a base draw and randomly vary it slightly
+            base = random.choice(BASE_DRAWS)
+            base_nums = [int(x) for x in base.split(',')]
 
-        # Randomly swap 0-2 numbers
-        nums = base_nums.copy()
-        for _ in range(random.randint(0, 2)):
-            idx = random.randint(0, 5)
-            nums[idx] = random.randint(1, 49)
+            # Randomly swap 0-2 numbers
+            nums = base_nums.copy()
+            for _ in range(random.randint(0, 2)):
+                idx = random.randint(0, 5)
+                nums[idx] = random.randint(1, 49)
 
-        nums = sorted(set(nums))[:6]
-        while len(nums) < 6:
-            nums.append(random.randint(1, 49))
-        nums = sorted(set(nums))[:6]
+            nums = sorted(set(nums))[:6]
+            while len(nums) < 6:
+                nums.append(random.randint(1, 49))
+            nums = sorted(set(nums))[:6]
 
-        draws.append({'draw_date': draw_date, 'numbers': ','.join(map(str, nums))})
+            draws.append({
+                'draw_date': draw_date,
+                'draw_type': draw_type,
+                'numbers': ','.join(map(str, nums))
+            })
 
     return draws
 
@@ -98,7 +106,11 @@ def main(num_days=90):
         draws_data = generate_sample_draws(num_days)
 
         for data in draws_data:
-            draw = Draw(draw_date=data['draw_date'], numbers=data['numbers'])
+            draw = Draw(
+                draw_date=data['draw_date'],
+                draw_type=data['draw_type'],
+                numbers=data['numbers']
+            )
             session.add(draw)
 
         session.commit()

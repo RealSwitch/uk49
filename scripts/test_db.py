@@ -23,8 +23,23 @@ from sqlalchemy import text
 print('DATABASE_URL:', DATABASE_URL)
 print('Testing connection...')
 
-ok = test_connection()
+# First try the shared helper; if it fails, attempt a direct connect
+ok = False
+try:
+  ok = test_connection()
+except Exception as e:
+  print('test_connection() raised an exception:', e)
+
 if not ok:
+  print('test_connection() reported failure — attempting direct connect to show error...')
+  try:
+    with engine.connect() as conn:
+      conn.execute(text('SELECT 1'))
+    print('Direct connect succeeded')
+    ok = True
+  except Exception as e:
+    import traceback
+    traceback.print_exc()
     print('✗ Connection test failed. Please verify DATABASE_URL and network access.')
     sys.exit(2)
 
